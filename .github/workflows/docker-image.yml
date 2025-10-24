@@ -1,25 +1,43 @@
-name: Docker Image CI
+name: Docker Build with Cache and Export
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag detection:$(date +%s)
-    - name: Save Docker image to tar
-      run: docker save detection:latest -o detection.tar
-    - name: Upload image tar as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-image
-        path: detection.tar
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build with cache
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: detection:latest
+          push: false                            # 不推 registry，可自行改 true
+          load: true                             # ✅ 导入到本地 Docker，用于 save
+          cache-from: type=gha                   # ✅ 启用缓存 (from GitHub cache)
+          cache-to: type=gha,mode=max            # ✅ 写入缓存
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1              # ✅ 增强缓存命中率（建议 Dockerfile 里也写）
+
+      # 导出成 .tar
+      - name: Save Docker image to tar
+        run: docker save detection:latest -o detection.tar
+
+      # 上传 artifact
+      - name: Upload image tar
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: detection.tar
+          retention-days: 7
